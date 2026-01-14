@@ -1,0 +1,10 @@
+torch
+transformers
+accelerate
+Pillow
+pandas
+numpy
+tqdm
+wandb
+scipy
+sklearn
