@@ -57,7 +57,7 @@ class AttentionBasedTrajectoryExtractor:
             print(f"[INFO] Detected {torch.cuda.device_count()} GPUs, forcing multi-GPU mode")
             print(f"[INFO] Max memory per GPU: {max_memory}")
         elif torch.cuda.is_available():
-            print(f"[INFO] 只检测到1个GPU，使用单GPU模式")
+            print(f"[INFO] Only detected 1 GPU, using single-GPU mode")
         self.model = AutoModelForImageTextToText.from_pretrained(
             model_path,
             dtype=dtype,
@@ -71,9 +71,9 @@ class AttentionBasedTrajectoryExtractor:
         self.attention_hook_extractor = AttentionHookExtractor(self.model, verbose=True)
         self.use_multi_gpu = hasattr(self.model, 'hf_device_map') and self.model.hf_device_map is not None
         if self.use_multi_gpu:
-            print(f"[INFO] 检测到多 GPU 模式，设备分布: {self.model.hf_device_map}")
+            print(f"[INFO] Detected multi-GPU mode, device distribution: {self.model.hf_device_map}")
         else:
-            print(f"[INFO] 使用单 GPU 模式")
+            print(f"[INFO] Using single-GPU mode")
         self._input_device = self._get_model_input_device()
     def _get_model_input_device(self) -> torch.device:
         if not self.use_multi_gpu:
@@ -142,7 +142,7 @@ class AttentionBasedTrajectoryExtractor:
         input_length = inputs["input_ids"].shape[1]
         safe_max_new_tokens = min(max_new_tokens, 1024)
         if max_new_tokens > safe_max_new_tokens:
-            print(f"[WARNING] max_new_tokens={max_new_tokens} 过大，已限制为 {safe_max_new_tokens} 以避免显存溢出")
+            print(f"[WARNING] max_new_tokens={max_new_tokens} is too large, limited to {safe_max_new_tokens} to avoid memory overflow")
         out = self.model.generate(
             **inputs,
             max_new_tokens=safe_max_new_tokens,
@@ -214,7 +214,7 @@ class AttentionBasedTrajectoryExtractor:
         image_path: Optional[str] = None,
     ) -> Trajectory:
         T = len(teacher_steps)
-        print(f"[INFO] 提取轨迹，共 {T} 个步骤（LVR格式）")
+        print(f"[INFO] Extracting trajectory, {T} steps (LVR format)")
         traj = {"steps": []}
         def print_memory_usage(stage=""):
             if torch.cuda.is_available():
@@ -227,7 +227,7 @@ class AttentionBasedTrajectoryExtractor:
                         torch.cuda.memory_reserved(i) / 1024**3 
                         for i in range(torch.cuda.device_count())
                     )
-                    print(f"[Memory {stage}] Allocated: {total_allocated:.2f}GB (所有GPU), Reserved: {total_reserved:.2f}GB (所有GPU)")
+                    print(f"[Memory {stage}] Allocated: {total_allocated:.2f}GB (all GPUs), Reserved: {total_reserved:.2f}GB (all GPUs)")
                 else:
                     allocated = torch.cuda.memory_allocated() / 1024**3
                     reserved = torch.cuda.memory_reserved() / 1024**3
@@ -235,44 +235,44 @@ class AttentionBasedTrajectoryExtractor:
         print_memory_usage("start")
         v_top_layer_path = None
         if enable_v_top_layer and v_top_layer_save_path is not None:
-            print("[INFO] 开始抓取 V_top_layer（静态特征）...")
+            print("[INFO] Starting to capture V_top_layer (static features)...")
             prompt_initial = build_prompt_with_chat_template(
                 self.processor, question, steps_prefix=[], force_T=T
             )
             inputs_initial = self._encode_with_image(image, prompt_initial)
             image_token_mask = self._image_token_mask(inputs_initial["input_ids"])
             if image_token_mask is None:
-                print("[WARNING] 无法识别图像 token 位置，跳过 V_top_layer 提取")
+                print("[WARNING] Unable to identify image token positions, skipping V_top_layer extraction")
             else:
                 try:
                     v_top_layer = self.v_top_layer_extractor.capture(
                         inputs=inputs_initial,
                         image_token_mask=image_token_mask
                     )
-                    print(f"[INFO] V_top_layer 抓取完成: shape={tuple(v_top_layer.shape)}, "
+                    print(f"[INFO] V_top_layer captured: shape={tuple(v_top_layer.shape)}, "
                           f"N_img={v_top_layer.shape[0]}, d={v_top_layer.shape[1]}")
                     v_top_layer_path = self.v_top_layer_extractor.save(
                         v_top_layer, v_top_layer_save_path
                     )
                     del v_top_layer
                 except Exception as e:
-                    print(f"[WARNING] V_top_layer 捕获失败，跳过: {str(e)}")
+                    print(f"[WARNING] V_top_layer capture failed, skipping: {str(e)}")
             del inputs_initial, prompt_initial
             self._empty_cache_all_gpus()
             gc.collect()
         elif not enable_v_top_layer:
-            print("[INFO] V_top_layer 捕获已禁用")
+            print("[INFO] V_top_layer capture disabled")
         elif v_top_layer_save_path is None:
-            print("[INFO] 未提供 V_top_layer 保存路径，跳过捕获")
+            print("[INFO] No V_top_layer save path provided, skipping capture")
         for t in range(1, T + 1):
-            print(f"\n[INFO] 处理步骤 {t}/{T}")
+            print(f"\n[INFO] Processing step {t}/{T}")
             prompt_full = build_prompt_with_chat_template(
                 self.processor, question, steps_prefix=teacher_steps[:t], force_T=T
             )
             inputs_full = self._encode_with_image(image, prompt_full)
             image_token_mask = self._image_token_mask(inputs_full["input_ids"])
             if image_token_mask is None:
-                raise RuntimeError(f"步骤 {t}: 无法识别图像token位置")
+                raise RuntimeError(f"Step {t}: Unable to identify image token positions")
             S = self.compute_attention_based_attribution(
                 inputs=inputs_full,
                 image_token_mask=image_token_mask
@@ -286,7 +286,7 @@ class AttentionBasedTrajectoryExtractor:
                 "method": "attention_based",
                 "raw_attention_scores": S.tolist(),
             })
-            print(f"[INFO] 步骤 {t}: 归因分布计算完成，N_img={len(p_t)}, "
+            print(f"[INFO] Step {t}: completed attribution distribution calculation, N_img={len(p_t)}, "
                   f"最大注意力强度={S.max().item():.4f}, 平均注意力强度={S.mean().item():.4f}")
             del inputs_full, image_token_mask, S, p_t
             self._empty_cache_all_gpus()
@@ -306,7 +306,7 @@ def main():
     parser.add_argument("--steps", type=int, default=1)
     parser.add_argument("--save", type=str, default="/root/autodl-tmp/ViLR/output/traj_1.json")
     parser.add_argument("--model", type=str, default="Qwen2.5-VL-3B-Instruct")
-    parser.add_argument("--topk", type=int, default=8, help="返回top-k个最重要的图像token索引")
+    parser.add_argument("--topk", type=int, default=8, help="Return top-k most important image token indices")
     parser.add_argument("--enable_v_top_layer", type=bool, default=False)
     parser.add_argument("--v_top_layer_save_path", type=str, default=None)
     args = parser.parse_args()
